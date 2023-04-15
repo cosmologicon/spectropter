@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<title>Depict spectrogram of an audio file</title>
+<link href='http://fonts.googleapis.com/css?family=Bubblegum+Sans|VT323' rel='stylesheet' type='text/css'>
+<script src="http://ufx.space/UFX.js"></script>
+<body>
+</body>
+<style>
+body {
+	background: black;
+}
+</style>
+<script src=info.js></script>
+<script src=spec.js></script>
+<script>
+
+var catcher = new FileCatcher()
+var audiopter = new Audiopter()
+var spectropter = new Spectropter()
+catcher.oncatch = function (file) {
+	audiopter.upload(file)
+}
+audiopter.ondone = function () {
+	spectropter.init(audiopter)
+}
+UFX.mouse.init(canvas2d)
+function think() {
+	raftoken = requestAnimationFrame(think)
+	var mstate = UFX.mouse.state()
+	info.think()
+	UFX.draw("c0")
+	var sx = canvas2d.width, sy = canvas2d.height
+
+	var buttons = {}
+	function drawbutton(name, x, y, w, h, drawlist) {
+		var b = 20
+		x += b ; y += b ; w -= 2 * b ; h -= 2 * b
+		UFX.draw("[ t", x, y, "z", w, h, "tr", 0, 0, 1, 1, "clip", drawlist, "]")
+		buttons[name] = [x, y, w, h]
+	}
+
+	drawbutton("open", sx * 0.75, sy * 0.6, sx * 0.25, sy * 0.15,
+		["z", 1/200, 1/50, "lw 5 tr 0 0 200 50 fs #002 f ss blue s",
+		"font 22px~'VT323' tab center middle fs blue ft Choose~Audio~File 100 25"])
+
+	if (audiopter.done) {
+		drawbutton("rewind", sx * 0.5, sy * 0.6, sx * 0.125, sy * 0.15,
+			["z", 1/50, 1/50, "lw 5 tr 0 0 50 50 fs #002 f ss blue s",
+			"( m 25 15 l 15 25 l 25 35 ) fs blue f ( m 35 15 l 25 25 l 35 35 ) f"])
+
+		if (audiopter.source) {
+			drawbutton("stop", sx * 0.625, sy * 0.6, sx * 0.125, sy * 0.15,
+				["z", 1/50, 1/50, "lw 5 tr 0 0 50 50 fs #002 f ss blue s",
+				"fs blue fr 18 18 14 14"])
+		} else {
+			drawbutton("play", sx * 0.625, sy * 0.6, sx * 0.125, sy * 0.15,
+				["z", 1/50, 1/50, "lw 5 tr 0 0 50 50 fs #002 f ss blue s",
+				"( m 20 15 l 30 25 l 20 35 ) fs blue f"])
+		}
+	}
+
+	catcher.position.apply(catcher, buttons.open)
+
+
+	if (spectropter.started) {
+		spectropter.killtime(0.05)
+		if (audiopter.done) {
+			var b = 20
+			var x = b, w = Math.round(canvas2d.width * 0.5) - 2 * b
+			var h = Math.round(canvas2d.height * 0.75) - 2 * b, y = b
+			UFX.draw("fs #007 fr", x - 2, y - 2, w + 4, h + 4)
+			spectropter.fillRectZoom(x, y, w, h, audiopter.currentTime(), 0.15 * w)
+			function drawhline(f, color, text) {
+				if (f <= 0 || f >= 1) return
+				var py = y + h - h * f
+				UFX.draw("b m", x, py, "l", x+w, py, "ss", color, "lw 1 s")
+				if (text) {
+					UFX.draw("[ t", x + w - 2, py, "fs", color, "tab right bottom",
+						"fs", color, "ft0", text, "]")
+				}
+			}
+			UFX.draw("font 18px~'VT323'")
+			for (var octave = 0 ; octave < 10 ; ++octave) {
+				var hA = -48 + 12 * octave
+				drawhline((hA - hmin) / (hmax - hmin), "#00F", "A" + octave)
+				var hDs = -54 + 12 * octave
+				drawhline((hDs - hmin) / (hmax - hmin), "#007", "D#" + octave)
+			}
+			UFX.draw("b m", x+w/2, y, "l", x+w/2, y+h, "ss cyan lw 1 s")
+		}
+
+		var b = 20
+		var x = b, w = canvas2d.width - 2 * b
+		var h = Math.round(canvas2d.height * 0.2), y = canvas2d.height - h - b
+		UFX.draw("fs #007 fr", x - 2, y - 2, w + 4, h + 4)
+		spectropter.fillRect(x, y, w, h)
+		function drawline(f, color, text) {
+			var px = x + w * f
+			UFX.draw("b m", px, y, "l", px, y+h, "ss", color, "lw 1 s")
+			if (text) {
+				UFX.draw("[ t", px, y - 4, "fs", color, "tab center bottom",
+					"fs", color, "ft0", text, "]")
+			}
+		}
+		UFX.draw("font 18px~'VT323'")
+		var t = audiopter.t
+		var dt = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 30, 60].filter(function (dt) {
+			return w * dt / t > 50
+		})[0]
+		for (var a = 1 ; a * dt < t ; ++a) {
+			drawline(a * dt / t, "#007", (a * dt).toFixed(dt < 1 ? 1 : 0) + "s")
+		}
+		if (audiopter.done) {
+			drawline(audiopter.currentFraction(), "cyan")
+		}
+		if (audiopter.source && audiopter.currentFraction() >= 1) {
+			audiopter.stop()
+			audiopter.settime(0)
+		}
+		if (mstate.left.down) {
+			var mx = mstate.pos[0], my = mstate.pos[1]
+			if (x <= mx && mx <= x + w && y <= my && my <= y + h) {
+				var playing = audiopter.source
+				if (playing) audiopter.stop()
+				audiopter.settime(audiopter.t * (mx - x) / w)
+				if (playing) audiopter.play()
+			}
+			for (var b in buttons) {
+				var button = buttons[b]
+				var x = button[0], y = button[1], w = button[2], h = button[3]
+				if (x <= mx && mx <= x + w && y <= my && my <= y + h) {
+					if (b == "play") {
+						audiopter.play()
+					} else if (b == "stop") {
+						audiopter.stop()
+					} else if (b == "rewind") {
+						audiopter.stop()
+						audiopter.settime(0)
+					}
+				}
+			}
+		}
+	}
+	catcher.draw()
+}
+
+UFX.resource.onload = function () {
+	think()
+	info.info("\nOpen or drag and drop audio file to begin.")
+}
+UFX.resource.load({
+	shaders: "spec.shader",
+})
+
+
+</script>
+
+
